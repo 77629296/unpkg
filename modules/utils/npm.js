@@ -1,14 +1,29 @@
 import url from 'url';
-import https from 'https';
+// import https from 'https';
+import http from 'http';
 import gunzip from 'gunzip-maybe';
 import LRUCache from 'lru-cache';
 
 import bufferStream from './bufferStream.js';
 
-const npmRegistryURL =
-  process.env.NPM_REGISTRY_URL || 'https://registry.npmjs.org';
+import scopes, { privateNpmRegistryURL, publicNpmRegistryURL } from '../../npmConfig.js';
 
-const agent = new https.Agent({
+// npm 私库地址
+const npmRegistryURLPrivate = privateNpmRegistryURL;
+
+// 公网npm地址
+const npmRegistryURL = publicNpmRegistryURL;
+
+const privateNpmRegistryURLArr = privateNpmRegistryURL.split(":");
+//获取私库的端口
+const privateNpmPort = privateNpmRegistryURLArr[privateNpmRegistryURLArr.length - 1];
+
+// const agent = new https.Agent({
+//   keepAlive: true
+// });
+
+
+const agent = new http.Agent({
   keepAlive: true
 });
 
@@ -26,7 +41,7 @@ const notFound = '';
 
 function get(options) {
   return new Promise((accept, reject) => {
-    https.get(options, accept).on('error', reject);
+    http.get(options, accept).on('error', reject);
   });
 }
 
@@ -40,15 +55,29 @@ function encodePackageName(packageName) {
     : encodeURIComponent(packageName);
 }
 
+function getIsPrivate(packageName) {
+  return scopes.some(val => (packageName.indexOf(val) !== -1));
+}
+
 async function fetchPackageInfo(packageName, log) {
   const name = encodePackageName(packageName);
-  const infoURL = `${npmRegistryURL}/${name}`;
+
+  const isPrivatePage = getIsPrivate(packageName);
+
+  let options = null;
+  let infoURL = null;
+
+  if (isPrivatePage) {
+    //私库的包
+    infoURL = `${npmRegistryURLPrivate}/${name}`;
+  } else {
+    infoURL = `${npmRegistryURL}/${name}`;
+  }
 
   log.debug('Fetching package info for %s from %s', packageName, infoURL);
-
   const { hostname, pathname } = url.parse(infoURL);
-  const options = {
-    agent: agent,
+
+  options = {
     hostname: hostname,
     path: pathname,
     headers: {
@@ -56,15 +85,30 @@ async function fetchPackageInfo(packageName, log) {
     }
   };
 
+  if (isPrivatePage) {
+    /*
+    * http.Agent 主要是为 http.request, http.get 提供代理服务
+    * 使用 keepAlive 代理，有效的减少了建立/销毁连接的开销
+    * port 设置私库的端口，如果不设置，默认http默认使用80，https默认使用443
+    *
+    */
+    const agentPrivate = new http.Agent({
+      keepAlive: true,
+      port: privateNpmPort
+    });
+    options.agent = agentPrivate;
+  } else {
+    options.agent = agent;
+  }
   const res = await get(options);
 
   if (res.statusCode === 200) {
     return bufferStream(res).then(JSON.parse);
   }
-
   if (res.statusCode === 404) {
     return null;
   }
+  console.log("request info======>", infoURL, res.statusCode);
 
   const content = (await bufferStream(res)).toString('utf-8');
 
@@ -166,11 +210,23 @@ export async function getPackageConfig(packageName, version, log) {
  * Returns a stream of the tarball'd contents of the given package.
  */
 export async function getPackage(packageName, version, log) {
+
   const tarballName = isScopedPackageName(packageName)
     ? packageName.split('/')[1]
     : packageName;
-  const tarballURL = `${npmRegistryURL}/${packageName}/-/${tarballName}-${version}.tgz`;
+  // const tarballURL = `${npmRegistryURL}/${packageName}/-/${tarballName}-${version}.tgz`;
+  // 这里会被切割@，外网不会
+  // 获取正确的包的url
 
+  let tarballURL = null;
+
+  const isPrivatePage = getIsPrivate(packageName);
+
+  if (isPrivatePage) {
+    tarballURL = `${npmRegistryURLPrivate}/${packageName}/-/${tarballName}-${version}.tgz`;
+  } else {
+    tarballURL = `${npmRegistryURL}/${packageName}/-/${tarballName}-${version}.tgz`;
+  }
   log.debug('Fetching package for %s from %s', packageName, tarballURL);
 
   const { hostname, pathname } = url.parse(tarballURL);
@@ -179,6 +235,22 @@ export async function getPackage(packageName, version, log) {
     hostname: hostname,
     path: pathname
   };
+
+  if (isPrivatePage) {
+    /*
+    * http.Agent 主要是为 http.request, http.get 提供代理服务
+    * 使用 keepAlive 代理，有效的减少了建立/销毁连接的开销
+    * port 设置私库的端口，如果不设置，默认http默认使用80，https默认使用443
+    *
+    */
+    const agentPrivate = new http.Agent({
+      keepAlive: true,
+      port: privateNpmPort
+    });
+    options.agent = agentPrivate;
+  } else {
+    options.agent = agent;
+  }
 
   const res = await get(options);
 
@@ -191,6 +263,8 @@ export async function getPackage(packageName, version, log) {
   if (res.statusCode === 404) {
     return null;
   }
+
+  console.log("request info======>", tarballURL, res.statusCode);
 
   const content = (await bufferStream(res)).toString('utf-8');
 

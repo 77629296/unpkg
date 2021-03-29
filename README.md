@@ -1,14 +1,23 @@
-# UNPKG &middot; [![Travis][build-badge]][build]
+# UNPKG
 
-[build-badge]: https://img.shields.io/travis/mjackson/unpkg/master.svg?style=flat-square
-[build]: https://travis-ci.org/mjackson/unpkg
+### 使用方法
+根目录新增npmConfig.js
 
-[UNPKG](https://unpkg.com) is a fast, global [content delivery network](https://en.wikipedia.org/wiki/Content_delivery_network) for everything on [npm](https://www.npmjs.com/).
+```javascript
+//存放私库包的命名空间
+export const scopes = [
+  '@rf'
+];
+/****
+* 私库地址，代理端口会解析url的端口号
+* const privateNpmRegistryURLArr = privateNpmRegistryURL.split(":");
+* const privateNpmPort = privateNpmRegistryURLArr[privateNpmRegistryURLArr.length - 1]
+* 拉取一些npm的包会返回302的情况，unpkg暂时没有处理，会不会和本地的npm源有关？
+***/
+export const privateNpmRegistryURL = 'http://ip:port'; // 改为自己私有库地址+端口
 
-### Documentation
+//互联网npm地址
+export const publicNpmRegistryURL = 'http://registry.npmjs.org';
 
-Please visit [the UNPKG website](https://unpkg.com) to learn more about how to use it.
-
-### Sponsors
-
-Our sponsors and backers are listed [in SPONSORS.md](SPONSORS.md).
+export default scopes;
+```
