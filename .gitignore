@@ -5,9 +5,10 @@ npm-debug.log*
 
 /.env
 /node_modules/
-/public/_client/
+# 服务器上build报错 这里放开 本地打包 服务器直接用
+# /public/_client/
+# /server.js
 /secrets.tar
-/server.js
 /service-account-staging.json
 /service-account.json
 /npmConfig.js
